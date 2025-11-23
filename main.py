@@ -1,5 +1,4 @@
 from flask import Flask, jsonify
-import os
 from routes.Login.auth import auth_bp
 
 app = Flask(__name__)
