@@ -21,7 +21,7 @@ def login():
 
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
-        "SELECT * FROM usuario WHERE username = %s",
+        "SELECT id_usuario FROM usuario WHERE username = %s",
         (username,)
     )
     user = cursor.fetchone()
