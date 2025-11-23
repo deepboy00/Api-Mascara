@@ -4,7 +4,7 @@ from mysql.connector import Error
 def get_db_connection():
     try:
         conn = mysql.connector.connect(
-            host="shinkansen.proxy.rlwy.net",
+            host="mysql.railway.internal",
             user="root",
             password="RuIqTtonyjAcPAfaFFsoEMEKtKzHItYh",
             database="railway",
