@@ -3,8 +3,11 @@ from db import get_db_connection
 
 ip_bp = Blueprint('ip', __name__)
 
+
+# ---------------------------------------------------------
+#   FUNCIONES AUXILIARES
+# ---------------------------------------------------------
 def validar_ip(ip):
-    """Valida que una IP sea IPv4 correcta manualmente"""
     partes = ip.split(".")
     if len(partes) != 4:
         return False
@@ -16,10 +19,9 @@ def validar_ip(ip):
     except:
         return False
 
+
 def clase_ip(ip):
-    """Obtiene la clase de la IP mediante el primer octeto"""
     primer = int(ip.split(".")[0])
-    
     if 1 <= primer <= 126:
         return "Clase A"
     elif 128 <= primer <= 191:
@@ -31,44 +33,81 @@ def clase_ip(ip):
     else:
         return "Clase E (Experimental)"
 
+
 def tipo_ip(ip):
-    """Determina si es pública o privada"""
     p1, p2, _, _ = map(int, ip.split("."))
 
-    # Rangos privados
     if p1 == 10:
         return "Privada"
     if p1 == 172 and 16 <= p2 <= 31:
         return "Privada"
     if p1 == 192 and p2 == 168:
         return "Privada"
-    
     return "Pública"
 
-def mascara_a_prefix(mascara):
-    """Convierte máscara decimal a prefijo (/24, /16, etc)"""
-    bits = "".join([bin(int(octeto))[2:].zfill(8) for octeto in mascara.split(".")])
+
+def mascara_a_prefijo(mascara):
+    bits = "".join([bin(int(o))[2:].zfill(8) for o in mascara.split(".")])
     return bits.count("1")
 
+
 def calcular_red(ip, mascara):
-    """Calcula dirección de red manualmente"""
     ip_bin = "".join([bin(int(o))[2:].zfill(8) for o in ip.split(".")])
     mask_bin = "".join([bin(int(o))[2:].zfill(8) for o in mascara.split(".")])
 
-    # AND bit a bit
-    red_bin = "".join(["1" if ip_bin[i] == "1" and mask_bin[i] == "1" else "0" for i in range(32)])
-    
+    red_bin = "".join([
+        "1" if ip_bin[i] == "1" and mask_bin[i] == "1" else "0"
+        for i in range(32)
+    ])
+
     return ".".join([str(int(red_bin[i:i+8], 2)) for i in range(0, 32, 8)])
 
 
+def sumar_uno(ip):
+    """Suma 1 a una IP decimal"""
+    octetos = list(map(int, ip.split(".")))
+    for i in reversed(range(4)):
+        if octetos[i] < 255:
+            octetos[i] += 1
+            break
+        else:
+            octetos[i] = 0
+    return ".".join(map(str, octetos))
 
+
+def restar_uno(ip):
+    """Resta 1 a una IP decimal"""
+    octetos = list(map(int, ip.split(".")))
+    for i in reversed(range(4)):
+        if octetos[i] > 0:
+            octetos[i] -= 1
+            break
+        else:
+            octetos[i] = 255
+    return ".".join(map(str, octetos))
+
+
+def calcular_broadcast(red, prefijo):
+    bits_red = prefijo
+    bits_host = 32 - bits_red
+
+    red_bin = "".join([bin(int(o))[2:].zfill(8) for o in red.split(".")])
+    broadcast_bin = red_bin[:bits_red] + ("1" * bits_host)
+
+    return ".".join([str(int(broadcast_bin[i:i+8], 2)) for i in range(0, 32, 8)])
+
+
+
+# ---------------------------------------------------------
+#   ENDPOINT PRINCIPAL
+# ---------------------------------------------------------
 @ip_bp.route('/registrar-ip', methods=['POST'])
 def registrar_ip():
     data = request.get_json()
 
     id_usuario = data.get("id_usuario")
     ip = data.get("ip")
-    mascara = data.get("mascara")  # Puede venir en /25 o 255.255.255.0
+    mascara = data.get("mascara")
 
     if not id_usuario or not ip or not mascara:
         return jsonify({"error": "Faltan datos (id_usuario, ip, mascara)"}), 400
@@ -77,41 +116,57 @@ def registrar_ip():
     # VALIDAR IP
     # -------------------------------------------------------------
     if not validar_ip(ip):
-        return jsonify({"error": "La IP ingresada no es válida"}), 400
+        return jsonify({"error": "IP inválida"}), 400
 
     # -------------------------------------------------------------
-    # CONVERTIR MÁSCARA A DECIMAL SI VIENE COMO /26
+    # PROCESAR MÁSCARA (puede venir /24 o 255.255.255.0)
     # -------------------------------------------------------------
     if mascara.startswith("/"):
         prefijo = int(mascara[1:])
         if not 0 <= prefijo <= 32:
             return jsonify({"error": "Prefijo inválido"}), 400
-        # Convertir bits a máscara decimal
+
         bits = ("1" * prefijo).ljust(32, "0")
         mascara_decimal = ".".join([str(int(bits[i:i+8], 2)) for i in range(0, 32, 8)])
+
     else:
         mascara_decimal = mascara
         if not validar_ip(mascara_decimal):
             return jsonify({"error": "Máscara inválida"}), 400
-        prefijo = mascara_a_prefix(mascara_decimal)
+
+        prefijo = mascara_a_prefijo(mascara_decimal)
 
     # -------------------------------------------------------------
-    # OBTENER CLASE Y TIPO
+    # CLASE, TIPO, DIRECCIÓN DE RED
     # -------------------------------------------------------------
     clase = clase_ip(ip)
     tipo = tipo_ip(ip)
+    red = calcular_red(ip, mascara_decimal)
 
     # -------------------------------------------------------------
-    # CALCULAR DIRECCIÓN DE RED
+    # BROADCAST
     # -------------------------------------------------------------
-    red = calcular_red(ip, mascara_decimal)
+    broadcast = calcular_broadcast(red, prefijo)
+
+    # -------------------------------------------------------------
+    # PRIMERA Y ÚLTIMA UTILIZABLE
+    # -------------------------------------------------------------
+    primera_ip = sumar_uno(red)
+    ultima_ip = restar_uno(broadcast)
+
+    # -------------------------------------------------------------
+    # HOSTS
+    # -------------------------------------------------------------
+    bits_host = 32 - prefijo
+    total_hosts = (2 ** bits_host) - 2
+    bits_subred = prefijo  # cantidad de bits usados para red
 
     # -------------------------------------------------------------
     # GUARDAR EN BD
     # -------------------------------------------------------------
     conn = get_db_connection()
     if conn is None:
-        return jsonify({"error": "No se pudo conectar a la base de datos"}), 500
+        return jsonify({"error": "No hay conexión con la BD"}), 500
 
     cursor = conn.cursor(dictionary=True)
 
@@ -124,10 +179,7 @@ def registrar_ip():
         return jsonify({"error": "Usuario no existe"}), 404
 
     cursor.execute(
-        """
-        INSERT INTO direcciones_ip (id_usuario, ip)
-        VALUES (%s, %s)
-        """,
+        "INSERT INTO direcciones_ip (id_usuario, ip) VALUES (%s, %s)",
         (id_usuario, ip)
     )
     conn.commit()
@@ -137,12 +189,17 @@ def registrar_ip():
     return jsonify({
         "message": "IP registrada exitosamente",
         "data": {
-            "id_usuario": id_usuario,
             "ip": ip,
             "mascara": mascara_decimal,
             "prefijo": f"/{prefijo}",
             "clase": clase,
             "tipo": tipo,
-            "direccion_red": red
+            "direccion_red": red,
+            "broadcast": broadcast,
+            "primer_ip_utilizable": primera_ip,
+            "ultima_ip_utilizable": ultima_ip,
+            "bits_subred": bits_subred,
+            "bits_host": bits_host,
+            "hosts_totales": total_hosts
         }
     }), 201
