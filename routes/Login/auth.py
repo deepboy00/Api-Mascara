@@ -21,7 +21,7 @@ def login():
 
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
-        "SELECT id_usuario FROM usuario WHERE username = %s",
+        "SELECT id_usuario, username, password FROM usuario WHERE username = %s",
         (username,)
     )
     user = cursor.fetchone()
@@ -29,7 +29,13 @@ def login():
     conn.close()
 
     if user and bcrypt.checkpw(password_bytes, user["password"].encode('utf-8')):
-        user_safe = {k: v for k, v in user.items() if k != 'password'}
-        return jsonify({"message": "Login exitoso", "user": user_safe})
+
+        # Eliminar contraseña antes de enviar
+        del user["password"]
+
+        return jsonify({
+            "message": "Login exitoso",
+            "user": user
+        }), 200
 
     return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
