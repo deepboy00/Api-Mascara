@@ -1,114 +1,175 @@
 from flask import Blueprint, request, jsonify
 
-calcular_vlms_bp = Blueprint('calcular_vlms', __name__)
+calcular_vlsm_bp = Blueprint('calcular_vlsm', __name__)
 
 
-# -------------------------------------------
-# UTILIDADES
-# -------------------------------------------
+# ==================================================
+# FUNCIONES DE APOYO (LÓGICA PURA)
+# ==================================================
 
-def ip_to_int(ip):
-    """Convierte 192.168.1.0 a entero."""
-    a, b, c, d = map(int, ip.split("."))
-    return (a << 24) | (b << 16) | (c << 8) | d
+def validar_ip(octs):
+    if len(octs) != 4:
+        return False, "La IP debe tener 4 octetos"
 
+    o1 = int(octs[0])
+    o2 = int(octs[1])
+    o3 = int(octs[2])
+    o4 = int(octs[3])
 
-def int_to_ip(num):
-    """Convierte entero a formato IP decimal."""
-    return ".".join(str((num >> shift) & 255) for shift in (24, 16, 8, 0))
+    if o1 < 1 or o1 > 223:
+        return False, "Primer octeto inválido (1–223)"
 
+    if o1 == 127:
+        return False, "127.x.x.x está reservado para loopback"
 
-def prefix_to_mask(prefix):
-    """Convierte /24 a 255.255.255.0"""
-    mask_int = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
-    return int_to_ip(mask_int)
+    for v in [o2, o3, o4]:
+        if v < 0 or v > 255:
+            return False, "Los octetos 2–4 deben estar entre 0–255"
 
+    if o1 == 0 and o4 == 0:
+        return False, "0.0.0.0 es una IP reservada"
 
-def next_power_of_two(n):
-    """Busca la potencia de 2 necesaria para cubrir n hosts."""
-    p = 1
-    while p < n:
-        p *= 2
-    return p
+    if o1 == 255 and o2 == 255 and o3 == 255 and o4 == 255:
+        return False, "255.255.255.255 es broadcast global"
 
-
-def hosts_to_prefix(hosts_needed):
-    """Dado un número de hosts, calcula el prefijo requerido."""
-    total_needed = hosts_needed + 2  # red + broadcast
-    block_size = next_power_of_two(total_needed)
-    host_bits = block_size.bit_length() - 1
-    return 32 - host_bits
+    return True, ""
 
 
-# -------------------------------------------
-# API PRINCIPAL
-# -------------------------------------------
+def ip_to_int(o1, o2, o3, o4):
+    return (o1 << 24) | (o2 << 16) | (o3 << 8) | o4
 
-@calcular_vlms_bp.route('/calcular-vlms', methods=['POST'])
-def calcular_vlms():
-    data = request.get_json()
 
-    if not data:
-        return jsonify({"error": "Debe enviar JSON"}), 400
+def int_to_ip(n):
+    return f"{(n >> 24) & 255}.{(n >> 16) & 255}.{(n >> 8) & 255}.{n & 255}"
 
-    ip_base = data.get("ip")
-    prefijo = data.get("prefijo")
-    hosts = data.get("hosts")
 
-    # Validaciones
-    if not ip_base or prefijo is None or not hosts:
-        return jsonify({"error": "Debe enviar ip, prefijo y hosts"}), 400
+def mask_from_prefix(pref):
+    mask = (0xFFFFFFFF << (32 - pref)) & 0xFFFFFFFF
+    return mask
 
+
+def mask_to_decimal(mask):
+    return int_to_ip(mask)
+
+
+def subred_minima(hosts):
+    needed = hosts + 2
+    bits = (needed - 1).bit_length()
+    return 2 ** bits
+
+
+def capacidad_prefijo(pref):
+    return 2 ** (32 - pref)
+
+
+# ==================================================
+#                 API VLSM
+# ==================================================
+@calcular_vlsm_bp.route('/calcular-vlsm', methods=['POST'])
+def calcular_vlsm():
+
+    data = request.json
+
+    # ----------------------
+    # VALIDAR ENTRADA
+    # ----------------------
+    if "ip" not in data or "prefijo" not in data or "hosts" not in data:
+        return jsonify({"error": "Debes enviar ip, prefijo y hosts"}), 400
+
+    ip = data["ip"]
+    prefijo = int(data["prefijo"])
+    hosts = data["hosts"]
+
+    # validar estructura de IP
     try:
-        ip_base_int = ip_to_int(ip_base)
+        octs = [int(x) for x in ip.split(".")]
     except:
         return jsonify({"error": "IP inválida"}), 400
 
-    if not (0 <= prefijo <= 32):
-        return jsonify({"error": "Prefijo inválido"}), 400
+    ok, err = validar_ip(octs)
+    if not ok:
+        return jsonify({"error": err}), 400
 
-    if not isinstance(hosts, list) or not all(isinstance(h, int) and h > 0 for h in hosts):
-        return jsonify({"error": "hosts debe ser lista de enteros positivos"}), 400
+    # validar prefijo
+    if prefijo < 8 or prefijo > 30:
+        return jsonify({"error": "Prefijo debe estar entre 8 y 30"}), 400
 
-    # Ordenar hosts de mayor a menor (VLSM)
-    hosts = sorted(hosts, reverse=True)
-
-    resultados = []
-    current_ip = ip_base_int
-    subnet_number = 1
+    # validar hosts
+    if not isinstance(hosts, list) or len(hosts) == 0:
+        return jsonify({"error": "Debes enviar una lista de hosts"}), 400
 
     for h in hosts:
-        # Prefijo mínimo para esta subred
-        new_prefix = hosts_to_prefix(h)
+        if type(h) != int or h < 1:
+            return jsonify({"error": "Cada host debe ser un entero mayor que 0"}), 400
 
-        # Tamaño del bloque en direcciones
-        block_size = 2 ** (32 - new_prefix)
+    # ordenar de mayor a menor
+    hosts_sorted = sorted(hosts, reverse=True)
 
-        # Calcular datos
-        network_address = current_ip
-        broadcast_address = current_ip + block_size - 1
+    # -------------------------
+    # VALIDAR QUE QUEPAN
+    # -------------------------
+    total_capacidad = capacidad_prefijo(prefijo)
+    requerido = sum(subred_minima(h) for h in hosts_sorted)
 
-        first_usable = network_address + 1
-        last_usable = broadcast_address - 1
+    if requerido > total_capacidad:
+        return jsonify({
+            "error": f"Las subredes NO caben en /{prefijo}. Capacidad: {total_capacidad}, requerido: {requerido}"
+        }), 400
+
+    # -------------------------
+    # NO PERMITIR IP = RED o BROADCAST
+    # -------------------------
+    ip_num = ip_to_int(*octs)
+    mask = mask_from_prefix(prefijo)
+    network = ip_num & mask
+    broadcast = network | (~mask & 0xFFFFFFFF)
+
+    if ip_num == network:
+        return jsonify({"error": f"La IP {ip} es la dirección de red."}), 400
+
+    if ip_num == broadcast:
+        return jsonify({"error": f"La IP {ip} es la dirección de broadcast."}), 400
+
+    # -------------------------
+    # CALCULAR VLSM
+    # -------------------------
+    resultados = []
+    inicio = network  # comenzamos desde la red
+
+    num_subred = 1
+
+    for h in hosts_sorted:
+
+        size = subred_minima(h)
+        pref = 32 - (size.bit_length() - 1)
+
+        red = inicio
+        first = red + 1
+        last = red + size - 2
+        bc = red + size - 1
+        mascara = mask_from_prefix(pref)
 
         resultados.append({
-            "subred_numero": subnet_number,
-            "host_solicitados": h,
-            "host_asignados": block_size - 2,
-            "direccion_red": int_to_ip(network_address),
-            "prefijo": new_prefix,
-            "mascara": prefix_to_mask(new_prefix),
-            "primer_ip_util": int_to_ip(first_usable),
-            "ultima_ip_util": int_to_ip(last_usable),
-            "broadcast": int_to_ip(broadcast_address)
+            "subred": num_subred,
+            "hosts_solicitados": h,
+            "tamaño_real": size,
+            "direccion_red": int_to_ip(red),
+            "prefijo": f"/{pref}",
+            "primer_ip_util": int_to_ip(first),
+            "ultima_ip_util": int_to_ip(last),
+            "broadcast": int_to_ip(bc),
+            "mascara_decimal": mask_to_decimal(mascara)
         })
 
-        # Pasar al siguiente bloque
-        current_ip = broadcast_address + 1
-        subnet_number += 1
+        inicio += size
+        num_subred += 1
 
+    # -------------------------
+    # RESPUESTA FINAL
+    # -------------------------
     return jsonify({
-        "ip_base": ip_base,
-        "prefijo_inicial": prefijo,
-        "resultado": resultados
+        "ip_base": ip,
+        "prefijo": f"/{prefijo}",
+        "hosts_ordenados": hosts_sorted,
+        "subredes": resultados
     })
