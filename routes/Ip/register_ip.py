@@ -198,8 +198,8 @@ def registrar_ip():
             "tipo": tipo,
             "direccion_red": red,
             "broadcast": broadcast,
-            "primer_ip_utilizable": primera_ip,
-            "ultima_ip_utilizable": ultima_ip,
+            "primer_ip": primera_ip,
+            "ultima_ip": ultima_ip,
             "bits_subred": bits_subred,
             "bits_host": bits_host,
             "hosts_totales": total_hosts
