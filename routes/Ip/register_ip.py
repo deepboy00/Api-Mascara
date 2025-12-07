@@ -3,10 +3,7 @@ from db import get_db_connection
 
 ip_bp = Blueprint('ip', __name__)
 
-
-# ---------------------------------------------------------
 #   FUNCIONES AUXILIARES
-# ---------------------------------------------------------
 def validar_ip(ip):
     partes = ip.split(".")
     if len(partes) != 4:
@@ -64,7 +61,6 @@ def calcular_red(ip, mascara):
 
 
 def sumar_uno(ip):
-    """Suma 1 a una IP decimal"""
     octetos = list(map(int, ip.split(".")))
     for i in reversed(range(4)):
         if octetos[i] < 255:
@@ -76,7 +72,6 @@ def sumar_uno(ip):
 
 
 def restar_uno(ip):
-    """Resta 1 a una IP decimal"""
     octetos = list(map(int, ip.split(".")))
     for i in reversed(range(4)):
         if octetos[i] > 0:
@@ -97,10 +92,28 @@ def calcular_broadcast(red, prefijo):
     return ".".join([str(int(broadcast_bin[i:i+8], 2)) for i in range(0, 32, 8)])
 
 
+#   FUNCIÓN PARA PROCESAR LA MÁSCARA O PREFIJO
+def obtener_mascara_y_prefijo(mascara_input):
 
-# ---------------------------------------------------------
+    # Caso: viene /24 (prefijo)
+    if isinstance(mascara_input, str) and mascara_input.startswith("/"):
+        prefijo = int(mascara_input[1:])
+    else:
+        # Caso: se espera máscara decimal
+        if not validar_ip(mascara_input):
+            return None, None
+        prefijo = mascara_a_prefijo(mascara_input)
+
+    if not 0 <= prefijo <= 32:
+        return None, None
+
+    # Convertir prefijo a máscara decimal
+    bits = ("1" * prefijo).ljust(32, "0")
+    mascara_decimal = ".".join([str(int(bits[i:i+8], 2)) for i in range(0, 32, 8)])
+
+    return mascara_decimal, prefijo
+
 #   ENDPOINT PRINCIPAL
-# ---------------------------------------------------------
 @ip_bp.route('/registrar-ip', methods=['POST'])
 def registrar_ip():
     data = request.get_json()
@@ -112,58 +125,29 @@ def registrar_ip():
     if not id_usuario or not ip or not mascara:
         return jsonify({"error": "Faltan datos (id_usuario, ip, mascara)"}), 400
 
-    # -------------------------------------------------------------
     # VALIDAR IP
-    # -------------------------------------------------------------
     if not validar_ip(ip):
         return jsonify({"error": "IP inválida"}), 400
 
-    # -------------------------------------------------------------
-    # PROCESAR MÁSCARA (puede venir /24 o 255.255.255.0)
-    # -------------------------------------------------------------
-    if mascara.startswith("/"):
-        prefijo = int(mascara[1:])
-        if not 0 <= prefijo <= 32:
-            return jsonify({"error": "Prefijo inválido"}), 400
+    # PROCESAR MÁSCARA O PREFIJO
+    mascara_decimal, prefijo = obtener_mascara_y_prefijo(mascara)
 
-        bits = ("1" * prefijo).ljust(32, "0")
-        mascara_decimal = ".".join([str(int(bits[i:i+8], 2)) for i in range(0, 32, 8)])
+    if mascara_decimal is None:
+        return jsonify({"error": "Máscara o prefijo inválido"}), 400
 
-    else:
-        mascara_decimal = mascara
-        if not validar_ip(mascara_decimal):
-            return jsonify({"error": "Máscara inválida"}), 400
-
-        prefijo = mascara_a_prefijo(mascara_decimal)
-
-    # -------------------------------------------------------------
-    # CLASE, TIPO, DIRECCIÓN DE RED
-    # -------------------------------------------------------------
+    # CALCULOS
     clase = clase_ip(ip)
     tipo = tipo_ip(ip)
     red = calcular_red(ip, mascara_decimal)
-
-    # -------------------------------------------------------------
-    # BROADCAST
-    # -------------------------------------------------------------
     broadcast = calcular_broadcast(red, prefijo)
-
-    # -------------------------------------------------------------
-    # PRIMERA Y ÚLTIMA UTILIZABLE
-    # -------------------------------------------------------------
     primera_ip = sumar_uno(red)
     ultima_ip = restar_uno(broadcast)
 
-    # -------------------------------------------------------------
-    # HOSTS
-    # -------------------------------------------------------------
     bits_host = 32 - prefijo
     total_hosts = (2 ** bits_host) - 2
-    bits_subred = prefijo  # cantidad de bits usados para red
+    bits_subred = prefijo
 
-    # -------------------------------------------------------------
     # GUARDAR EN BD
-    # -------------------------------------------------------------
     conn = get_db_connection()
     if conn is None:
         return jsonify({"error": "No hay conexión con la BD"}), 500
