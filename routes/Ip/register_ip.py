@@ -179,9 +179,16 @@ def registrar_ip():
         return jsonify({"error": "Usuario no existe"}), 404
 
     cursor.execute(
-        "INSERT INTO direcciones_ip (id_usuario, ip) VALUES (%s, %s)",
-        (id_usuario, ip)
+        """INSERT INTO direcciones_ip 
+        (id_usuario, ip, mascara, prefijo, clase, tipo, direccion_red, broadcast,
+        primera_ip, ultima_ip, bits_subred, bits_host, hosts_totales)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (
+            id_usuario, ip, mascara_decimal, prefijo, clase, tipo, red, broadcast,
+            primera_ip, ultima_ip, bits_subred, bits_host, total_hosts
+        )
     )
+
     conn.commit()
     cursor.close()
     conn.close()
