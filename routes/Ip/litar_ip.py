@@ -3,7 +3,6 @@ from db import get_db_connection
 
 listar_ip_bp = Blueprint('listar_ip', __name__)
 
-
 @listar_ip_bp.route('/listar-ip', methods=['GET'])
 def listar_ip():
     id_usuario = request.args.get("id_usuario")
@@ -30,10 +29,11 @@ def listar_ip():
         conn.close()
         return jsonify({"error": "El usuario no existe"}), 404
 
-    # Obtener direcciones IP
+    # Obtener direcciones IP (todos los campos)
     cursor.execute(
         """
-        SELECT id_ip, ip, fecha_registro 
+        SELECT id_ip, ip, mascara, prefijo, clase, tipo, direccion_red, broadcast,
+               primera_ip, ultima_ip, bits_subred, bits_host, hosts_totales, fecha_registro
         FROM direcciones_ip
         WHERE id_usuario = %s
         ORDER BY fecha_registro DESC
