@@ -117,19 +117,24 @@ def calcular_vlsm():
         }), 400
 
     # -------------------------
-    # *** VALIDACIÓN REMOVIDA ***
-    #     Se permite red y broadcast
+    # NO PERMITIR IP = RED o BROADCAST
     # -------------------------
-
     ip_num = ip_to_int(*octs)
     mask = mask_from_prefix(prefijo)
     network = ip_num & mask
+    broadcast = network | (~mask & 0xFFFFFFFF)
+
+    if ip_num == network:
+        return jsonify({"error": f"La IP {ip} es la dirección de red."}), 400
+
+    if ip_num == broadcast:
+        return jsonify({"error": f"La IP {ip} es la dirección de broadcast."}), 400
 
     # -------------------------
     # CALCULAR VLSM
     # -------------------------
     resultados = []
-    inicio = network  # comenzamos desde la red (correcto incluso si la ip ingresada es red o broadcast)
+    inicio = network  # comenzamos desde la red
 
     num_subred = 1
 
