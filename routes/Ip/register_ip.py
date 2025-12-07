@@ -147,7 +147,7 @@ def registrar_ip():
     total_hosts = (2 ** bits_host) - 2
     bits_subred = prefijo
 
-    # GUARDAR EN BD
+    # CONEXIÓN BD
     conn = get_db_connection()
     if conn is None:
         return jsonify({"error": "No hay conexión con la BD"}), 500
@@ -156,12 +156,23 @@ def registrar_ip():
 
     cursor.execute("SELECT id_usuario FROM usuario WHERE id_usuario = %s", (id_usuario,))
     usuario = cursor.fetchone()
-
     if not usuario:
         cursor.close()
         conn.close()
         return jsonify({"error": "Usuario no existe"}), 404
 
+    # ----------------- VALIDAR DUPLICADO -----------------
+    cursor.execute(
+        "SELECT * FROM direcciones_ip WHERE id_usuario = %s AND ip = %s AND mascara = %s",
+        (id_usuario, ip, mascara_decimal)
+    )
+    existe = cursor.fetchone()
+    if existe:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Esta IP con la misma máscara ya está registrada"}), 400
+
+    # ----------------- INSERTAR -----------------
     cursor.execute(
         """INSERT INTO direcciones_ip 
         (id_usuario, ip, mascara, prefijo, clase, tipo, direccion_red, broadcast,
@@ -194,3 +205,4 @@ def registrar_ip():
             "hosts_totales": total_hosts
         }
     }), 201
+
