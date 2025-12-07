@@ -5,6 +5,7 @@ from routes.Login.auth import auth_bp
 from routes.Login.register import register_bp
 from routes.Ip.register_ip import ip_bp
 from routes.Ip.litar_ip import listar_ip_bp
+from routes.vlms.calcular_vlms import calcular_vlms_bp
 
 app = Flask(__name__)
 
@@ -20,6 +21,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(register_bp)
 app.register_blueprint(ip_bp)
 app.register_blueprint(listar_ip_bp)
+app.register_blueprint(calcular_vlms_bp)
 
 @app.after_request
 def after_request(response):
