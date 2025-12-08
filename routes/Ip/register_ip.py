@@ -3,7 +3,7 @@ from db import get_db_connection
 
 ip_bp = Blueprint('ip', __name__)
 
-#   FUNCIONES AUXILIARES
+# Funciones auxiliares de la ip y mascara
 def validar_ip(ip):
     partes = ip.split(".")
     if len(partes) != 4:
@@ -92,14 +92,14 @@ def calcular_broadcast(red, prefijo):
     return ".".join([str(int(broadcast_bin[i:i+8], 2)) for i in range(0, 32, 8)])
 
 
-#   FUNCIÓN PARA PROCESAR LA MÁSCARA O PREFIJO
+# Funcion para procesar la msacara o prefijo
 def obtener_mascara_y_prefijo(mascara_input):
 
-    # Caso: viene /24 (prefijo)
+    # SI viene /24 (prefijo)
     if isinstance(mascara_input, str) and mascara_input.startswith("/"):
         prefijo = int(mascara_input[1:])
     else:
-        # Caso: se espera máscara decimal
+        # Sino se espera máscara decimal
         if not validar_ip(mascara_input):
             return None, None
         prefijo = mascara_a_prefijo(mascara_input)
@@ -113,7 +113,7 @@ def obtener_mascara_y_prefijo(mascara_input):
 
     return mascara_decimal, prefijo
 
-#   ENDPOINT PRINCIPAL
+# Endpoint
 @ip_bp.route('/registrar-ip', methods=['POST'])
 def registrar_ip():
     data = request.get_json()
@@ -125,17 +125,17 @@ def registrar_ip():
     if not id_usuario or not ip or not mascara:
         return jsonify({"error": "Faltan datos (id_usuario, ip, mascara)"}), 400
 
-    # VALIDAR IP
+    # Validar la IP
     if not validar_ip(ip):
         return jsonify({"error": "IP inválida"}), 400
 
-    # PROCESAR MÁSCARA O PREFIJO
+    # Procesar mascara o prefijo
     mascara_decimal, prefijo = obtener_mascara_y_prefijo(mascara)
 
     if mascara_decimal is None:
         return jsonify({"error": "Máscara o prefijo inválido"}), 400
 
-    # CALCULOS
+    # Calculos mediante las funciones
     clase = clase_ip(ip)
     tipo = tipo_ip(ip)
     red = calcular_red(ip, mascara_decimal)
@@ -147,7 +147,7 @@ def registrar_ip():
     total_hosts = (2 ** bits_host) - 2
     bits_subred = prefijo
 
-    # CONEXIÓN BD
+    # Conexion con la base de datos
     conn = get_db_connection()
     if conn is None:
         return jsonify({"error": "No hay conexión con la BD"}), 500
@@ -161,7 +161,7 @@ def registrar_ip():
         conn.close()
         return jsonify({"error": "Usuario no existe"}), 404
 
-    # ----------------- VALIDAR DUPLICADO -----------------
+    # Validdar si es un registra duplicado
     cursor.execute(
         "SELECT * FROM direcciones_ip WHERE id_usuario = %s AND ip = %s AND mascara = %s",
         (id_usuario, ip, mascara_decimal)
@@ -172,7 +172,7 @@ def registrar_ip():
         conn.close()
         return jsonify({"error": "Esta IP con la misma máscara ya está registrada"}), 400
 
-    # ----------------- INSERTAR -----------------
+    # Insertarmos en la base de datos
     cursor.execute(
         """INSERT INTO direcciones_ip 
         (id_usuario, ip, mascara, prefijo, clase, tipo, direccion_red, broadcast,

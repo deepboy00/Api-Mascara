@@ -10,7 +10,7 @@ def listar_ip():
     if not id_usuario:
         return jsonify({"error": "Debes enviar id_usuario"}), 400
 
-    # Conexión a BD
+    # Conexion con base de datos
     conn = get_db_connection()
     if conn is None:
         return jsonify({"error": "No se pudo conectar a la base de datos"}), 500
@@ -29,7 +29,7 @@ def listar_ip():
         conn.close()
         return jsonify({"error": "El usuario no existe"}), 404
 
-    # Obtener direcciones IP (todos los campos)
+    # Obtener direcciones IP 
     cursor.execute(
         """
         SELECT id_ip, ip, mascara, prefijo, clase, tipo, direccion_red, broadcast,
