@@ -2,9 +2,7 @@ from flask import Blueprint, request, jsonify
 
 calcular_vlms_bp = Blueprint('calcular_vlms', __name__)
 
-# ---------------------------------------------------
-# UTILIDADES BÁSICAS
-# ---------------------------------------------------
+# Utilidades basicas
 def ip_to_int(ip):
     a, b, c, d = map(int, ip.split("."))
     return (a << 24) | (b << 16) | (c << 8) | d
@@ -28,10 +26,7 @@ def hosts_to_prefix(hosts):
     host_bits = block.bit_length() - 1
     return 32 - host_bits
 
-# ---------------------------------------------------
-# VALIDACIONES (como el JS)
-# ---------------------------------------------------
-
+# Validaciones
 def validar_ip(octs):
     if len(octs) != 4:
         return False, "La IP debe tener 4 octetos"
@@ -84,11 +79,7 @@ def validar_caben(hosts, prefijo):
     usado = sum(block_size_for_hosts(h) for h in hosts)
     return usado <= capacidad, capacidad, usado
 
-
-# ---------------------------------------------------
-# ENDPOINT PRINCIPAL
-# ---------------------------------------------------
-
+# Endpoint 
 @calcular_vlms_bp.route('/calcular-vlms', methods=['POST'])
 def calcular_vlms():
     data = request.get_json()
@@ -103,9 +94,7 @@ def calcular_vlms():
     if not ip or prefijo is None or hosts_lista is None:
         return jsonify({"error": "Debe enviar ip, prefijo y hosts"}), 400
 
-    # ===============================
-    # VALIDACIÓN EXACTA COMO EN EL JS
-    # ===============================
+    # Validacion
     try:
         octs = ip.split(".")
     except:
@@ -139,13 +128,9 @@ def calcular_vlms():
             "requerido": usado
         }), 400
 
-    # ===============================
-    # PERMITIR IP DE RED Y BROADCAST
-    # ===============================
 
-    # ===============================
-    # LÓGICA REAL DEL VLSM
-    # ===============================
+    # Logica para el vlsm
+
     base_int = ip_to_int(ip)
     current_ip = base_int
     resultados = []
